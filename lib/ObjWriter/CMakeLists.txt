@@ -23,7 +23,6 @@ endif()
 add_library(objwriter
    SHARED
    objwriter.cpp
-   objwriter.h
    ${OBJWRITER_EXPORTS_DEF}
 )
 

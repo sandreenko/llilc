@@ -16,3 +16,4 @@ EmitDebugLoc
 EmitDebugFunctionInfo
 EmitDebugModuleInfo
 EmitDebugVar
+EmitFunctionSymbolDef
