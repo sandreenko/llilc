@@ -10,6 +10,7 @@
 
 #include "typeBuilder.h"
 #include "llvm/Support/COFF.h"
+#include <sstream>
 
 UserDefinedTypesBuilder::UserDefinedTypesBuilder()
     : Allocator(), TypeTable(Allocator) {}
@@ -41,6 +42,11 @@ void UserDefinedTypesBuilder::EmitTypeInformation(
 
   TypeTable.ForEachRecord([&](TypeIndex FieldTypeIndex,
                               ArrayRef<uint8_t> Record) {
+	  unsigned index = FieldTypeIndex.getIndex();
+	  if (index >= 4671 && index <= 4680)
+	  {
+		  printf("our index %d\n", index);
+	  }
     StringRef S(reinterpret_cast<const char *>(Record.data()), Record.size());
     Streamer->EmitBinaryData(S);
   });
@@ -107,10 +113,7 @@ unsigned UserDefinedTypesBuilder::GetCompleteClassTypeIndex(
   FLBR.begin();
 
   if (ClassDescriptor.BaseClassId != 0) {
-    MemberAttributes def;
-    TypeIndex BaseTypeIndex(ClassDescriptor.BaseClassId);
-    BaseClassRecord BCR(def, BaseTypeIndex, 0);
-    FLBR.writeMemberType(BCR);
+      AddBaseClass(FLBR, ClassDescriptor.BaseClassId);
   }
 
   for (int i = 0; i < ClassFieldsDescriptor.FieldsCount; ++i) {
@@ -130,10 +133,90 @@ unsigned UserDefinedTypesBuilder::GetCompleteClassTypeIndex(
                  TypeIndex(), TypeIndex(), ClassFieldsDescriptor.Size,
                  ClassDescriptor.Name, ClassDescriptor.UniqueName);
   TypeIndex ClassIndex = TypeTable.writeKnownType(CR);
+
   if (ClassDescriptor.IsStruct == false) {
+      return GetPointerType(ClassIndex);
+  }
+  return ClassIndex.getIndex();
+}
+
+unsigned UserDefinedTypesBuilder::GetArrayTypeIndex(ClassTypeDescriptor ClassDescriptor, ArrayTypeDescriptor ArrayDescriptor) {
+    TypeIndex ElementTypeIndex = TypeIndex(ArrayDescriptor.ElementType);
+    TypeIndex IndexType = TypeIndex(SimpleTypeKind::Int32);
+
+    ArrayRecord AR(ElementTypeIndex, IndexType, ArrayDescriptor.Size, "");
+    TypeIndex ArrayIndex = TypeTable.writeKnownType(AR);
+
+    FieldListRecordBuilder FLBR(TypeTable);
+    FLBR.begin();
+
+    unsigned TargetPointerSize = 8;
+    unsigned Offset = 0;
+    unsigned FieldsCount = 0;
+
+    assert(ClassDescriptor.BaseClassId != 0);
+    AddBaseClass(FLBR, ClassDescriptor.BaseClassId);
+    FieldsCount++;
+    Offset += TargetPointerSize;
+
+    MemberAccess Access = MemberAccess::Public;
+
+    DataMemberRecord CountDMR(Access, ArrayIndex, Offset,
+        "count");
+    FieldsCount++;
+    Offset += TargetPointerSize;
+
+    for (unsigned i = 0; i < ArrayDescriptor.Rank; ++i) { 
+        std::stringstream ss; 
+        ss << "length" << i;
+        char* LengthName = new char[ss.gcount() + 1];
+        ss >> LengthName;
+        DataMemberRecord LengthDMR(Access, TypeIndex(SimpleTypeKind::Int32), Offset, LengthName);
+        FieldsCount++;
+        Offset += 4;
+    }
+
+    for (unsigned i = 0; i < ArrayDescriptor.Rank; ++i) {
+        std::stringstream ss;
+        ss << "bounds" << i;
+        char* BoundsName = new char[ss.gcount() + 1];
+        ss >> BoundsName;
+        DataMemberRecord LengthDMR(Access, TypeIndex(SimpleTypeKind::Int32), Offset, BoundsName);
+        FieldsCount++;
+        Offset += 4;
+    }
+
+
+    DataMemberRecord ArrayDMR(Access, ArrayIndex, Offset,
+        "values");
+    FLBR.writeMemberType(ArrayDMR);
+    FieldsCount++;
+
+    TypeIndex FieldListIndex = FLBR.end();
+
+    assert(ClassDescriptor.IsStruct == false);
+    TypeRecordKind Kind = TypeRecordKind::Class;
+    ClassOptions CO = GetCommonClassOptions();
+    ClassRecord CR(Kind, FieldsCount, CO, FieldListIndex,
+        TypeIndex(), TypeIndex(), ArrayDescriptor.Size,
+        ClassDescriptor.Name, ClassDescriptor.UniqueName);
+    TypeIndex ClassIndex = TypeTable.writeKnownType(CR);
+
+    return GetPointerType(ClassIndex);
+
+}
+
+void UserDefinedTypesBuilder::AddBaseClass(FieldListRecordBuilder& FLBR, unsigned BaseClassId)
+{
+    MemberAttributes def;
+    TypeIndex BaseTypeIndex(BaseClassId);
+    BaseClassRecord BCR(def, BaseTypeIndex, 0);
+    FLBR.writeMemberType(BCR);
+}
+
+unsigned UserDefinedTypesBuilder::GetPointerType(TypeIndex ClassIndex)
+{
     PointerRecord PointerToClass(ClassIndex, 0);
     TypeIndex PointerIndex = TypeTable.writeKnownType(PointerToClass);
     return PointerIndex.getIndex();
-  }
-  return ClassIndex.getIndex();
 }

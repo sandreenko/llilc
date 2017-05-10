@@ -28,7 +28,7 @@ extern "C" struct EnumRecordTypeDescriptor {
 };
 
 extern "C" struct EnumTypeDescriptor {
-  uint64 ElementType;
+  unsigned ElementType;
   uint64 ElementCount;
   char *Name;
   char *UniqueName;
@@ -43,13 +43,20 @@ extern "C" struct ClassTypeDescriptor {
 
 extern "C" struct DataFieldDescriptor {
   unsigned FieldTypeIndex;
-  int Offset;
+  uint64 Offset;
   char *Name;
 };
 
 extern "C" struct ClassFieldsTypeDescriptior {
-  int Size;
+  uint64 Size;
   int FieldsCount;
+};
+
+extern "C" struct ArrayTypeDescriptor {
+  unsigned Count;
+  unsigned Rank;
+  unsigned ElementType;
+  uint64 Size;
 };
 
 #pragma pack(pop)
@@ -67,12 +74,18 @@ public:
                             ClassFieldsTypeDescriptior ClassFieldsDescriptor,
                             DataFieldDescriptor *FieldsDescriptors);
 
+  unsigned GetArrayTypeIndex(ClassTypeDescriptor ClassDescriptor,
+                             ArrayTypeDescriptor ArrayDescriptor);
+
 private:
   void EmitCodeViewMagicVersion();
   ClassOptions GetCommonClassOptions();
 
   unsigned GetEnumFieldListType(uint64 Count,
                                 EnumRecordTypeDescriptor *TypeRecords);
+  unsigned GetPointerType(TypeIndex ClassIndex);
+
+  void AddBaseClass(FieldListRecordBuilder& FLBR, unsigned BaseClassId);
 
   MCObjectStreamer *Streamer;
   BumpPtrAllocator Allocator;

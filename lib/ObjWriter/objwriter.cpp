@@ -48,6 +48,7 @@
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/Win64EH.h"
 #include "llvm/Target/TargetMachine.h"
+#include "llvm/MC/MCCodeView.h"
 
 using namespace llvm;
 using namespace llvm::codeview;
@@ -352,8 +353,29 @@ int ObjectWriter::EmitSymbolRef(const char *SymbolName,
     TargetExpr = MCBinaryExpr::createAdd(
         TargetExpr, MCConstantExpr::create(Delta, *OutContext), *OutContext);
   }
-  Streamer->EmitValueImpl(TargetExpr, Size, SMLoc(), IsPCRelative);
+  if (IsPCRelative)
+  {
+      SMLoc Loc = SMLoc();
+      Streamer->MCStreamer::EmitValueImpl(TargetExpr, Size, Loc);
+      MCDataFragment *DF = Streamer->getOrCreateDataFragment();
 
+      MCCVLineEntry::Make(Streamer);
+      MCDwarfLineEntry::Make(Streamer, Streamer->getCurrentSectionOnly());
+
+      // Avoid fixups when possible.
+      int64_t AbsValue;
+      if (TargetExpr->evaluateAsAbsolute(AbsValue, *Assembler)) {
+          Streamer->EmitIntValue(AbsValue, Size);
+      }
+      DF->getFixups().push_back(
+          MCFixup::create(DF->getContents().size(), TargetExpr,
+              MCFixup::getKindForSize(Size, true), Loc));
+      DF->getContents().resize(DF->getContents().size() + Size, 0);
+  }
+  else
+  {
+      Streamer->EmitValueImpl(TargetExpr, Size, SMLoc());
+  }
   return Size;
 }
 
@@ -741,4 +763,10 @@ unsigned ObjectWriter::GetCompleteClassTypeIndex(
          "only COFF is supported now");
   return TypeBuilder.GetCompleteClassTypeIndex(
       ClassDescriptor, ClassFieldsDescriptor, FieldsDescriptors);
+}
+
+unsigned ObjectWriter::GetArrayTypeIndex(ClassTypeDescriptor ClassDescriptor, ArrayTypeDescriptor ArrayDescriptor) {
+    assert(ObjFileInfo->getObjectFileType() == ObjFileInfo->IsCOFF &&
+        "only COFF is supported now");
+    return TypeBuilder.GetArrayTypeIndex(ClassDescriptor, ArrayDescriptor);
 }
